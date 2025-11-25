@@ -11,6 +11,14 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
 import glob
+import os
+from dotenv import load_dotenv
+import chromadb
+from sentence_transformers import SentenceTransformer
+from openai import OpenAI
+
+# Load environment variables
+load_dotenv()
 
 # Page configuration
 st.set_page_config(
@@ -2369,6 +2377,294 @@ def display_advanced_recommendations(data):
     col2.metric("Medium Priority", len(medium_priority))
     col3.metric("Opportunities", len(opportunities))
 
+@st.cache_resource
+def init_vector_db():
+    """Initialize ChromaDB connection and embedding model"""
+    try:
+        client = chromadb.PersistentClient(path="./chroma_db")
+        collection = client.get_or_create_collection(
+            name="political_insights",
+            metadata={"description": "Political campaign insights and analytics"}
+        )
+        embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        return collection, embedding_model
+    except Exception as e:
+        st.error(f"Error initializing vector database: {e}")
+        return None, None
+
+def query_vector_db(collection, embedding_model, query_text, n_results=5, filters=None):
+    """Query the vector database for relevant documents"""
+    if not collection or not embedding_model:
+        return None
+    
+    try:
+        # Generate query embedding
+        query_embedding = embedding_model.encode([query_text]).tolist()[0]
+        
+        # Query with filters if provided
+        if filters:
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_results,
+                where=filters
+            )
+        else:
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_results
+            )
+        
+        return results
+    except Exception as e:
+        st.error(f"Error querying vector database: {e}")
+        return None
+
+def get_openai_client():
+    """Get OpenAI client with API key from environment or user input"""
+    api_key = os.getenv('OPENAI_API_KEY')
+    
+    if not api_key:
+        # Try to get from session state (user might have entered it)
+        api_key = st.session_state.get('openai_api_key')
+    
+    if not api_key:
+        return None
+    
+    try:
+        return OpenAI(api_key=api_key)
+    except Exception as e:
+        st.error(f"Error initializing OpenAI client: {e}")
+        return None
+
+def generate_chatbot_response(client, query, context_docs):
+    """Generate response using OpenAI based on retrieved context"""
+    if not client:
+        return "OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file or enter it in the sidebar."
+    
+    # Build context from retrieved documents
+    context_text = "\n\n".join([
+        f"[{i+1}] {doc}" for i, doc in enumerate(context_docs[:5])
+    ])
+    
+    system_prompt = """You are an expert political campaign analyst and social media strategist specializing in Lebanese politics. 
+Your role is to provide actionable campaign analysis and strategic advice based on social media listening data.
+
+When answering questions:
+1. Base your analysis on the provided context from social media data
+2. Provide specific, actionable recommendations
+3. Reference specific metrics, trends, or insights from the data when relevant
+4. Focus on campaign strategy, public sentiment, engagement optimization, and audience insights
+5. Be concise but thorough
+6. If the context doesn't contain relevant information, say so clearly
+
+Always structure your response to be helpful for campaign decision-making."""
+    
+    user_prompt = f"""Based on the following social media listening data and campaign insights, please answer this question:
+
+Question: {query}
+
+Relevant Context from Social Media Data:
+{context_text}
+
+Please provide a comprehensive analysis and actionable advice."""
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=1000
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error generating response: {e}"
+
+def display_chatbot(data):
+    """Display the AI chatbot interface for campaign analysis"""
+    st.header("🤖 AI Campaign Analyst Chatbot")
+    st.markdown("**Ask questions about your campaign performance, sentiment, engagement, and get strategic advice based on social media listening data.**")
+    st.markdown("---")
+    
+    # Initialize session state for chat history
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    
+    # Sidebar for API key configuration
+    with st.sidebar.expander("⚙️ OpenAI API Configuration", expanded=False):
+        api_key_input = st.text_input(
+            "OpenAI API Key",
+            value=st.session_state.get('openai_api_key', ''),
+            type="password",
+            help="Enter your OpenAI API key. You can also set OPENAI_API_KEY in your .env file."
+        )
+        if api_key_input:
+            st.session_state.openai_api_key = api_key_input
+            os.environ['OPENAI_API_KEY'] = api_key_input
+            st.success("API key saved for this session")
+    
+    # Check if vector DB exists
+    if not os.path.exists("./chroma_db"):
+        st.warning("⚠️ Vector database not found. Please run `python create_vector_db.py` first to create the embeddings database.")
+        st.info("""
+        **To set up the chatbot:**
+        1. Make sure you have run `python comprehensive_fetcher.py` to collect data
+        2. Run `python advanced_insights_analyzer.py` to generate advanced analysis
+        3. Run `python create_vector_db.py` to create the vector database
+        4. Refresh this page
+        """)
+        return
+    
+    # Initialize vector DB
+    collection, embedding_model = init_vector_db()
+    
+    if not collection or not embedding_model:
+        st.error("Failed to initialize vector database. Please check that the database exists.")
+        return
+    
+    # Check collection count
+    try:
+        count = collection.count()
+        if count == 0:
+            st.warning("⚠️ Vector database is empty. Please run `python create_vector_db.py` to populate it.")
+            return
+        st.info(f"📊 Connected to vector database with {count} documents")
+    except:
+        st.warning("⚠️ Could not verify vector database. Please ensure it's properly set up.")
+        return
+    
+    # Example questions
+    st.markdown("### 💡 Example Questions")
+    example_questions = [
+        "What are the top performing tweets and why?",
+        "What is the overall sentiment of mentions about the campaign?",
+        "What topics are most discussed in relation to the campaign?",
+        "What are the main concerns or negative feedback from the audience?",
+        "Which hashtags are performing best?",
+        "What are the key recommendations for improving engagement?",
+        "What entities or topics should I focus on in my messaging?",
+        "How is the campaign performing compared to engagement metrics?",
+        "What are the best times to post based on engagement data?",
+        "What are the main themes in negative sentiment mentions?"
+    ]
+    
+    cols = st.columns(2)
+    for i, question in enumerate(example_questions):
+        with cols[i % 2]:
+            if st.button(f"💬 {question}", key=f"example_{i}", use_container_width=True):
+                # Process the question directly
+                if 'chat_history' not in st.session_state:
+                    st.session_state.chat_history = []
+                
+                # Add user message to history
+                st.session_state.chat_history.append(("user", question))
+                
+                # Initialize vector DB if not already done
+                collection, embedding_model = init_vector_db()
+                
+                if collection and embedding_model:
+                    with st.spinner("🔍 Searching campaign data and generating analysis..."):
+                        # Query vector database
+                        results = query_vector_db(collection, embedding_model, question, n_results=5)
+                        
+                        if results and results['documents'] and len(results['documents'][0]) > 0:
+                            # Get relevant documents
+                            context_docs = results['documents'][0]
+                            
+                            # Get OpenAI client
+                            client = get_openai_client()
+                            
+                            # Generate response
+                            response = generate_chatbot_response(client, question, context_docs)
+                            
+                            # Add response to history
+                            st.session_state.chat_history.append(("assistant", response))
+                        else:
+                            error_msg = "I couldn't find relevant information in the campaign data to answer your question. Please try rephrasing or ask about a different aspect of the campaign."
+                            st.session_state.chat_history.append(("assistant", error_msg))
+                
+                st.rerun()
+    
+    st.markdown("---")
+    
+    # Chat interface
+    st.markdown("### 💬 Chat with Campaign Analyst")
+    
+    # Display chat history
+    chat_container = st.container()
+    with chat_container:
+        for i, (role, message) in enumerate(st.session_state.chat_history):
+            if role == "user":
+                with st.chat_message("user"):
+                    st.write(message)
+            else:
+                with st.chat_message("assistant"):
+                    st.write(message)
+    
+    # User input
+    user_input = st.text_input(
+        "Ask a question about your campaign:",
+        key="user_input",
+        placeholder="e.g., What are the main concerns from negative sentiment mentions?"
+    )
+    
+    # Process query
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        send_button = st.button("Send", type="primary")
+    
+    if send_button and user_input:
+        # Add user message to history
+        st.session_state.chat_history.append(("user", user_input))
+        
+        # Show loading
+        with st.spinner("🔍 Searching campaign data and generating analysis..."):
+            # Query vector database
+            results = query_vector_db(collection, embedding_model, user_input, n_results=5)
+            
+            if results and results['documents'] and len(results['documents'][0]) > 0:
+                # Get relevant documents
+                context_docs = results['documents'][0]
+                
+                # Get OpenAI client
+                client = get_openai_client()
+                
+                # Generate response
+                response = generate_chatbot_response(client, user_input, context_docs)
+                
+                # Add response to history
+                st.session_state.chat_history.append(("assistant", response))
+                
+                # Show sources
+                with st.expander("📚 Sources (Retrieved Documents)", expanded=False):
+                    for i, (doc, metadata) in enumerate(zip(context_docs, results['metadatas'][0])):
+                        st.markdown(f"**Source {i+1}** ({metadata.get('type', 'unknown')}):")
+                        st.caption(doc[:300] + "..." if len(doc) > 300 else doc)
+                        st.markdown("---")
+            else:
+                error_msg = "I couldn't find relevant information in the campaign data to answer your question. Please try rephrasing or ask about a different aspect of the campaign."
+                st.session_state.chat_history.append(("assistant", error_msg))
+        
+        # Rerun to show new messages
+        st.rerun()
+    
+    # Clear chat button
+    if st.button("🗑️ Clear Chat History"):
+        st.session_state.chat_history = []
+        st.rerun()
+    
+    st.markdown("---")
+    st.markdown("""
+    **How it works:**
+    1. Your question is converted to an embedding using semantic search
+    2. The system searches the vector database for relevant campaign insights
+    3. The most relevant documents are retrieved as context
+    4. OpenAI GPT generates a comprehensive analysis based on the retrieved data
+    5. You get actionable campaign advice grounded in your actual social media data
+    """)
+
 def main():
     # Title
     st.title("[LEBANON] Mark Daou - Political Intelligence Dashboard")
@@ -2443,6 +2739,7 @@ def main():
     # Build navigation menu based on available data
     pages = [
         "[CAMPAIGN] Campaign Overview",
+        "[CHATBOT] AI Campaign Analyst",
         "[INSIGHTS] Actionable Insights",
         "[AI] Advanced Recommendations",
         "[HASHTAG] Campaign Tracker",
@@ -2473,6 +2770,8 @@ def main():
     # Display selected page
     if page == "[CAMPAIGN] Campaign Overview":
         display_campaign_overview(data)
+    elif page == "[CHATBOT] AI Campaign Analyst":
+        display_chatbot(data)
     elif page == "[INSIGHTS] Actionable Insights":
         display_insights(data)
     elif page == "[AI] Advanced Recommendations":
