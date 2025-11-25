@@ -36,6 +36,19 @@ class PoliticalInsightsVectorDB:
             metadata={"description": "Political campaign insights and analytics"}
         )
     
+    def _get_enriched_tweets(self, data: Dict[str, Any], advanced_key: str, raw_key: str) -> List[Dict[str, Any]]:
+        """Get AI-enriched tweets, falling back to original data if needed"""
+        advanced = data.get('advanced_analysis', {})
+        tweets = advanced.get(advanced_key, [])
+        
+        if tweets:
+            return tweets
+        
+        # Fallback to original data (which now contains inline AI insights)
+        original_data = data.get('original_data', {})
+        raw_source = original_data.get(raw_key, {})
+        return raw_source.get('data', []) if raw_source else []
+    
     def load_latest_analysis(self) -> Dict[str, Any]:
         """Load the latest advanced analysis file"""
         analysis_files = glob.glob("*_advanced_analysis_*.json")
@@ -50,6 +63,16 @@ class PoliticalInsightsVectorDB:
         with open(latest_file, 'r', encoding='utf-8') as f:
             return json.load(f)
     
+    def _is_retweet(self, tweet):
+        """Return True if tweet is a retweet"""
+        # Check referenced_tweets field
+        for ref in tweet.get('referenced_tweets', []) or []:
+            if ref.get('type') == 'retweeted':
+                return True
+        # Check if text starts with RT
+        text = (tweet.get('text') or '').strip()
+        return text.startswith('RT ')
+    
     def create_tweet_documents(self, data: Dict[str, Any]) -> tuple:
         """Create documents from all tweets (own, mentions, search results)"""
         print("[PROCESS] Creating tweet embeddings...")
@@ -62,15 +85,31 @@ class PoliticalInsightsVectorDB:
         username = data.get('username', 'Unknown')
         
         # Process own tweets
-        analyzed_tweets = data.get('advanced_analysis', {}).get('analyzed_tweets', [])
-        analyzed_mentions = data.get('advanced_analysis', {}).get('analyzed_mentions', [])
-        analyzed_search = data.get('advanced_analysis', {}).get('analyzed_search', [])
+        analyzed_tweets = self._get_enriched_tweets(data, 'analyzed_tweets', 'user_tweets')
+        analyzed_mentions = self._get_enriched_tweets(data, 'analyzed_mentions', 'mentions')
+        analyzed_search = self._get_enriched_tweets(data, 'analyzed_search', 'search_results')
+        
+        # Separate retweets from original tweets
+        own_tweets_original = []
+        own_tweets_retweets = []
+        for tweet in analyzed_tweets:
+            if self._is_retweet(tweet):
+                own_tweets_retweets.append(tweet)
+            else:
+                own_tweets_original.append(tweet)
+        
+        if len(own_tweets_retweets) > 0:
+            print(f"[INFO] Found {len(own_tweets_original)} original tweets and {len(own_tweets_retweets)} retweets")
         
         # Combine all tweets with their source
         all_tweets = [
-            {'source': 'own_tweet', 'data': tweet, 'idx': idx} 
-            for idx, tweet in enumerate(analyzed_tweets)
+            {'source': 'own_tweet', 'data': tweet, 'idx': idx, 'is_retweet': False} 
+            for idx, tweet in enumerate(own_tweets_original)
         ]
+        all_tweets.extend([
+            {'source': 'own_tweet', 'data': tweet, 'idx': idx, 'is_retweet': True} 
+            for idx, tweet in enumerate(own_tweets_retweets)
+        ])
         all_tweets.extend([
             {'source': 'mention', 'data': tweet, 'idx': idx} 
             for idx, tweet in enumerate(analyzed_mentions)
@@ -84,6 +123,7 @@ class PoliticalInsightsVectorDB:
             source = item['source']
             tweet = item['data']
             idx = item['idx']
+            is_retweet = item.get('is_retweet', False)
             
             tweet_text = tweet.get('text', '')
             if not tweet_text or len(tweet_text) < 10:
@@ -120,15 +160,26 @@ class PoliticalInsightsVectorDB:
             
             # Different doc format based on source
             if source == 'own_tweet':
-                doc_text = f"""
-                Tweet by {author_name} (@{author_username}):
-                {tweet_text}
-                
-                Source: Own tweet
-                Sentiment: {sentiment_str} (confidence: {sentiment_conf:.2%})
-                Emotion: {emotion_str}
-                Engagement: {engagement} (likes: {metrics.get('like_count', 0)}, retweets: {metrics.get('retweet_count', 0)}, replies: {metrics.get('reply_count', 0)})
-                """
+                if is_retweet:
+                    doc_text = f"""
+                    Retweet by {author_name} (@{author_username}):
+                    {tweet_text}
+                    
+                    Source: Retweet
+                    Sentiment: {sentiment_str} (confidence: {sentiment_conf:.2%})
+                    Emotion: {emotion_str}
+                    Engagement: {engagement} (likes: {metrics.get('like_count', 0)}, retweets: {metrics.get('retweet_count', 0)}, replies: {metrics.get('reply_count', 0)})
+                    """
+                else:
+                    doc_text = f"""
+                    Tweet by {author_name} (@{author_username}):
+                    {tweet_text}
+                    
+                    Source: Own tweet
+                    Sentiment: {sentiment_str} (confidence: {sentiment_conf:.2%})
+                    Emotion: {emotion_str}
+                    Engagement: {engagement} (likes: {metrics.get('like_count', 0)}, retweets: {metrics.get('retweet_count', 0)}, replies: {metrics.get('reply_count', 0)})
+                    """
             elif source == 'mention':
                 doc_text = f"""
                 Mention of {politician} by @{author_username}:
@@ -151,14 +202,26 @@ class PoliticalInsightsVectorDB:
                 """
             
             documents.append(doc_text.strip())
+            
+            # Use tweet ID for unique identification, fallback to source_idx if no ID
+            tweet_id = tweet.get('id')
+            if tweet_id:
+                # Use tweet ID with source prefix for uniqueness
+                unique_id = f"{source}_{tweet_id}"
+            else:
+                # Fallback: use source, retweet flag, and index for uniqueness
+                retweet_suffix = "_rt" if is_retweet else ""
+                unique_id = f"{source}{retweet_suffix}_{idx}"
+            
             metadatas.append({
                 'type': 'tweet',
                 'tweet_source': source,
+                'is_retweet': is_retweet,
                 'politician': politician,
                 'username': username,
                 'author_name': author_name,
                 'author_username': author_username,
-                'tweet_id': tweet.get('id', f'{source}_{idx}'),
+                'tweet_id': tweet_id or f'{source}_{idx}',
                 'text': tweet_text,
                 'sentiment': sentiment_str,
                 'sentiment_score': float(sentiment_conf),
@@ -172,15 +235,17 @@ class PoliticalInsightsVectorDB:
                 'lang': tweet.get('lang', ''),
                 'has_entities': 'entities' in tweet
             })
-            ids.append(f"{source}_{idx}")
+            ids.append(unique_id)
         
         # Count by source
-        own_count = sum(1 for m in metadatas if m.get('tweet_source') == 'own_tweet')
+        own_count = sum(1 for m in metadatas if m.get('tweet_source') == 'own_tweet' and not m.get('is_retweet', False))
+        retweet_count = sum(1 for m in metadatas if m.get('is_retweet', False))
         mention_count = sum(1 for m in metadatas if m.get('tweet_source') == 'mention')
         search_count = sum(1 for m in metadatas if m.get('tweet_source') == 'search_result')
         
         print(f"[OK] Created {len(documents)} tweet embeddings")
-        print(f"     Own tweets: {own_count}")
+        print(f"     Own tweets (original): {own_count}")
+        print(f"     Retweets: {retweet_count}")
         print(f"     Mentions: {mention_count}")
         print(f"     Search results: {search_count}\n")
         return documents, metadatas, ids

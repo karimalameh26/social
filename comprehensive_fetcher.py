@@ -105,8 +105,12 @@ class ComprehensivePoliticalDataFetcher:
         - user.location: Self-reported location from user profiles (e.g., "Beirut, Lebanon")
         - geo.place_id: Precise location if tweet is geo-tagged (rare, <1% of tweets)
         - place objects: Structured city/country data when available
+        
+        Note: Excludes retweets to avoid double counting with engagement_geography retweet data
         """
-        search_query = query or f'"{self.politician_name}" OR @{self.politician_username}'
+        base_query = query or f'"{self.politician_name}" OR @{self.politician_username}'
+        # Exclude retweets to avoid double counting with retweeting_users data
+        search_query = f"{base_query} -is:retweet"
         print(f"[SEARCH] Searching recent tweets: {search_query}")
         
         url = "https://api.twitter.com/2/tweets/search/recent"
@@ -189,6 +193,26 @@ class ComprehensivePoliticalDataFetcher:
             'user.fields': 'location,name,username,verified,public_metrics'
         }
         return self._make_request(url, params)
+    
+    def _is_retweet(self, tweet):
+        """Check if tweet is a retweet"""
+        for ref in tweet.get('referenced_tweets', []) or []:
+            if ref.get('type') == 'retweeted':
+                return True
+        text = (tweet.get('text') or '').strip()
+        return text.startswith('RT ')
+    
+    def _filter_retweets(self, tweets, label="tweets"):
+        """Remove retweets from a list of tweets"""
+        if not tweets:
+            return []
+        
+        filtered = [tweet for tweet in tweets if not self._is_retweet(tweet)]
+        removed = len(tweets) - len(filtered)
+        
+        if removed > 0:
+            print(f"[FILTER] Removed {removed} retweets from {label}")
+        return filtered
     
     def analyze_sentiment_keywords(self, tweets):
         """Basic sentiment analysis based on keywords"""
@@ -791,18 +815,27 @@ class ComprehensivePoliticalDataFetcher:
         # 2. Get user's tweets (50 to stay under API limits)
         data['user_tweets'] = self.get_user_tweets(max_results=50)
         if data['user_tweets']:
-            print(f"[SUCCESS] Fetched {len(data['user_tweets'].get('data', []))} tweets\n")
+            tweet_list = data['user_tweets'].get('data', [])
+            original_count = len(tweet_list)
+            data['user_tweets']['data'] = self._filter_retweets(tweet_list, "own tweets")
+            print(f"[SUCCESS] Fetched {original_count} tweets ({len(data['user_tweets']['data'])} original)\n")
         
         # 3. Get mentions (50 to stay under API limits)
         data['mentions'] = self.get_mentions(max_results=50)
         if data['mentions']:
-            print(f"[SUCCESS] Fetched {len(data['mentions'].get('data', []))} mentions\n")
+            mention_list = data['mentions'].get('data', [])
+            original_mentions = len(mention_list)
+            data['mentions']['data'] = self._filter_retweets(mention_list, "mentions")
+            print(f"[SUCCESS] Fetched {original_mentions} mentions ({len(data['mentions']['data'])} original)\n")
         
         # 4. Search recent tweets - NOW ENABLED for geographic analysis
         print("[SEARCH] Searching for recent discussions about the politician...")
         data['search_results'] = self.search_recent_tweets(max_results=100)
         if data['search_results']:
-            print(f"[SUCCESS] Fetched {len(data['search_results'].get('data', []))} search results\n")
+            search_list = data['search_results'].get('data', [])
+            original_search = len(search_list)
+            data['search_results']['data'] = self._filter_retweets(search_list, "search results")
+            print(f"[SUCCESS] Fetched {original_search} search results ({len(data['search_results']['data'])} original)\n")
         else:
             print("[INFO] No search results found\n")
         

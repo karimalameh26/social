@@ -1479,11 +1479,15 @@ def display_insights(data):
     insights = None
     if advanced:
         # Build insights from advanced analysis
+        inline_counts = advanced.get('inline_counts', {})
+        tweets_analyzed = len(advanced.get('analyzed_tweets', [])) or inline_counts.get('own_tweets', len(raw_data.get('user_tweets', {}).get('data', [])))
+        mentions_analyzed = len(advanced.get('analyzed_mentions', [])) or inline_counts.get('mentions', len(raw_data.get('mentions', {}).get('data', [])))
+        
         insights = {
             'summary': {
                 'total_reach': raw_data.get('user_profile', {}).get('data', {}).get('public_metrics', {}).get('followers_count', 0),
-                'tweets_analyzed': len(advanced.get('analyzed_tweets', [])),
-                'mentions_analyzed': len(advanced.get('analyzed_mentions', [])),
+                'tweets_analyzed': tweets_analyzed,
+                'mentions_analyzed': mentions_analyzed,
             },
             'sentiment_insights': {},
             'engagement_insights': {},
@@ -2392,27 +2396,155 @@ def init_vector_db():
         st.error(f"Error initializing vector database: {e}")
         return None, None
 
-def query_vector_db(collection, embedding_model, query_text, n_results=5, filters=None):
-    """Query the vector database for relevant documents"""
+def query_vector_db(collection, embedding_model, query_text, n_results=5, filters=None, sort_by_engagement=False):
+    """Query the vector database for relevant documents
+    
+    Args:
+        sort_by_engagement: If True, sort results by engagement_score instead of similarity
+    """
     if not collection or not embedding_model:
         return None
     
     try:
-        # Generate query embedding
+        # Engagement-based queries: fetch all matching tweets and sort by engagement
+        if sort_by_engagement:
+            where_clause = dict(filters) if filters else {}
+            where_clause['type'] = 'tweet'
+            
+            records = collection.get(where=where_clause)
+            if records and records.get('documents'):
+                combined = list(zip(
+                    records['documents'],
+                    records['metadatas'],
+                    records['ids']
+                ))
+                combined = [
+                    item for item in combined
+                    if isinstance(item[1].get('engagement_score'), (int, float))
+                ]
+                combined.sort(
+                    key=lambda x: x[1].get('engagement_score', 0),
+                    reverse=True
+                )
+                combined = combined[:n_results]
+                
+                if combined:
+                    return {
+                        'documents': [[item[0] for item in combined]],
+                        'metadatas': [[item[1] for item in combined]],
+                        'ids': [[item[2] for item in combined]]
+                    }
+            sort_by_engagement = False
+        
         query_embedding = embedding_model.encode([query_text]).tolist()[0]
+        
+        # If sorting by engagement, get more results to sort from
+        query_n_results = n_results * 6 if sort_by_engagement else n_results
         
         # Query with filters if provided
         if filters:
-            results = collection.query(
-                query_embeddings=[query_embedding],
-                n_results=n_results,
-                where=filters
-            )
+            # Build where clause - handle multiple conditions
+            where_clause = {}
+            
+            # Check if we need to filter by is_retweet
+            if "is_retweet" in filters:
+                is_retweet_value = filters["is_retweet"]
+                where_clause["is_retweet"] = is_retweet_value
+            
+            # Check if we need to filter by tweet_source
+            if "tweet_source" in filters:
+                where_clause["tweet_source"] = filters["tweet_source"]
+            
+            # Query with the filter
+            if where_clause:
+                results = collection.query(
+                    query_embeddings=[query_embedding],
+                    n_results=query_n_results * 2,  # Get more results to filter
+                    where=where_clause
+                )
+                
+                # If we have multiple filter conditions, filter in Python
+                if len(filters) > 1:
+                    filtered_docs = []
+                    filtered_metas = []
+                    filtered_ids = []
+                    filtered_distances = []
+                    
+                    if results and results['documents'] and len(results['documents']) > 0:
+                        for i, metadata in enumerate(results['metadatas'][0]):
+                            # Check all filter conditions
+                            matches = True
+                            for key, value in filters.items():
+                                if metadata.get(key) != value:
+                                    matches = False
+                                    break
+                            
+                            if matches:
+                                filtered_docs.append(results['documents'][0][i])
+                                filtered_metas.append(metadata)
+                                filtered_ids.append(results['ids'][0][i])
+                                if results.get('distances') and len(results['distances']) > 0:
+                                    filtered_distances.append(results['distances'][0][i])
+                        
+                        # Limit to n_results
+                        filtered_docs = filtered_docs[:n_results]
+                        filtered_metas = filtered_metas[:n_results]
+                        filtered_ids = filtered_ids[:n_results]
+                        if filtered_distances:
+                            filtered_distances = filtered_distances[:n_results]
+                        
+                        results = {
+                            'documents': [filtered_docs],
+                            'metadatas': [filtered_metas],
+                            'ids': [filtered_ids]
+                        }
+                        if filtered_distances:
+                            results['distances'] = [filtered_distances]
+                else:
+                    # Single condition - limit results
+                    if results and results['documents'] and len(results['documents']) > 0:
+                        results['documents'] = [results['documents'][0][:n_results]]
+                        results['metadatas'] = [results['metadatas'][0][:n_results]]
+                        results['ids'] = [results['ids'][0][:n_results]]
+                        if results.get('distances'):
+                            results['distances'] = [results['distances'][0][:n_results]]
+            else:
+                results = collection.query(
+                    query_embeddings=[query_embedding],
+                    n_results=query_n_results
+                )
         else:
             results = collection.query(
                 query_embeddings=[query_embedding],
-                n_results=n_results
+                n_results=query_n_results
             )
+        
+        # If sorting by engagement, sort the results by engagement_score
+        if sort_by_engagement and results and results.get('metadatas') and len(results['metadatas']) > 0:
+            # Combine documents, metadatas, ids, and distances for sorting
+            combined = list(zip(
+                results['documents'][0],
+                results['metadatas'][0],
+                results['ids'][0],
+                results.get('distances', [[]])[0] if results.get('distances') else [0] * len(results['documents'][0])
+            ))
+            
+            # Sort by engagement_score (descending), fallback to distance if no engagement_score
+            combined.sort(key=lambda x: (
+                x[1].get('engagement_score', 0) if isinstance(x[1].get('engagement_score'), (int, float)) else 0
+            ), reverse=True)
+            
+            # Take top n_results
+            combined = combined[:n_results]
+            
+            # Reconstruct results
+            results = {
+                'documents': [[item[0] for item in combined]],
+                'metadatas': [[item[1] for item in combined]],
+                'ids': [[item[2] for item in combined]]
+            }
+            if results.get('distances'):
+                results['distances'] = [[item[3] for item in combined]]
         
         return results
     except Exception as e:
@@ -2550,6 +2682,7 @@ def display_chatbot(data):
         "What are the main themes in negative sentiment mentions?"
     ]
     
+    selected_filter = None
     cols = st.columns(2)
     for i, question in enumerate(example_questions):
         with cols[i % 2]:
@@ -2566,8 +2699,19 @@ def display_chatbot(data):
                 
                 if collection and embedding_model:
                     with st.spinner("🔍 Searching campaign data and generating analysis..."):
+                        # Check if question is about top performing/highest engagement
+                        sort_by_engagement = any(phrase in question.lower() for phrase in [
+                            'top performing', 'highest engagement', 'best performing', 
+                            'most engagement', 'top tweets', 'best tweets'
+                        ])
+                        
                         # Query vector database
-                        results = query_vector_db(collection, embedding_model, question, n_results=5)
+                        results = query_vector_db(
+                            collection, embedding_model, question, 
+                            n_results=5, 
+                            filters=selected_filter,
+                            sort_by_engagement=sort_by_engagement
+                        )
                         
                         if results and results['documents'] and len(results['documents'][0]) > 0:
                             # Get relevant documents
@@ -2603,6 +2747,21 @@ def display_chatbot(data):
                 with st.chat_message("assistant"):
                     st.write(message)
     
+    # Source filter
+    source_options = {
+        "All sources": None,
+        "Own tweets": {"tweet_source": "own_tweet", "is_retweet": False},
+        "Retweets": {"is_retweet": True},
+        "Mentions": {"tweet_source": "mention"},
+        "Search results": {"tweet_source": "search_result"}
+    }
+    source_selection = st.selectbox(
+        "Filter by source (optional):",
+        list(source_options.keys()),
+        index=0
+    )
+    selected_filter = source_options[source_selection]
+    
     # User input
     user_input = st.text_input(
         "Ask a question about your campaign:",
@@ -2621,8 +2780,19 @@ def display_chatbot(data):
         
         # Show loading
         with st.spinner("🔍 Searching campaign data and generating analysis..."):
+            # Check if question is about top performing/highest engagement
+            sort_by_engagement = any(phrase in user_input.lower() for phrase in [
+                'top performing', 'highest engagement', 'best performing', 
+                'most engagement', 'top tweets', 'best tweets'
+            ])
+            
             # Query vector database
-            results = query_vector_db(collection, embedding_model, user_input, n_results=5)
+            results = query_vector_db(
+                collection, embedding_model, user_input, 
+                n_results=5, 
+                filters=selected_filter,
+                sort_by_engagement=sort_by_engagement
+            )
             
             if results and results['documents'] and len(results['documents'][0]) > 0:
                 # Get relevant documents

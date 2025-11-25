@@ -91,6 +91,70 @@ class AdvancedInsightsAnalyzer:
         
         print("\n[SUCCESS] All models loaded!\n")
     
+    def _is_retweet(self, tweet):
+        """Return True if tweet is a retweet"""
+        for ref in tweet.get('referenced_tweets', []) or []:
+            if ref.get('type') == 'retweeted':
+                return True
+        text = (tweet.get('text') or '').strip()
+        return text.startswith('RT ')
+
+    def _filter_retweets(self, tweets, label):
+        """Remove retweets from tweet collections to avoid duplicates"""
+        if not tweets:
+            return []
+        filtered = [t for t in tweets if not self._is_retweet(t)]
+        removed = len(tweets) - len(filtered)
+        if removed > 0:
+            print(f"[FILTER] Removed {removed} retweets from {label} to avoid double counting.")
+        return filtered
+    
+    def _deduplicate_tweets_across_sources(self, own_tweets, mentions, search_results):
+        """Remove duplicate tweets across different sources by tweet ID.
+        
+        Priority order:
+        1. own_tweets (keep all - these are the politician's tweets)
+        2. mentions (remove if already in own_tweets)
+        3. search_results (remove if already in own_tweets or mentions)
+        """
+        # Collect tweet IDs from higher priority sources
+        seen_ids = set()
+        
+        # Track own tweets
+        for tweet in own_tweets:
+            tweet_id = tweet.get('id')
+            if tweet_id:
+                seen_ids.add(tweet_id)
+        
+        # Filter mentions - remove if already seen
+        mentions_filtered = []
+        mentions_removed = 0
+        for tweet in mentions:
+            tweet_id = tweet.get('id')
+            if tweet_id and tweet_id not in seen_ids:
+                mentions_filtered.append(tweet)
+                seen_ids.add(tweet_id)
+            elif tweet_id:
+                mentions_removed += 1
+        
+        # Filter search results - remove if already seen
+        search_filtered = []
+        search_removed = 0
+        for tweet in search_results:
+            tweet_id = tweet.get('id')
+            if tweet_id and tweet_id not in seen_ids:
+                search_filtered.append(tweet)
+                seen_ids.add(tweet_id)
+            elif tweet_id:
+                search_removed += 1
+        
+        if mentions_removed > 0:
+            print(f"[DEDUP] Removed {mentions_removed} duplicate mentions (already in own tweets)")
+        if search_removed > 0:
+            print(f"[DEDUP] Removed {search_removed} duplicate search results (already in own tweets or mentions)")
+        
+        return own_tweets, mentions_filtered, search_filtered
+
     def _load_sentiment_models(self):
         """Load advanced sentiment analysis models"""
         print("[AI] Loading Twitter-optimized RoBERTa sentiment model...")
@@ -355,7 +419,7 @@ class AdvancedInsightsAnalyzer:
             return []
     
     def analyze_tweet_comprehensive(self, tweet):
-        """Comprehensive analysis of a single tweet"""
+        """Comprehensive analysis of a single tweet (mutates tweet in place)"""
         text = tweet.get('text', '')
         
         # 1. Advanced sentiment
@@ -385,21 +449,20 @@ class AdvancedInsightsAnalyzer:
         # 6. Language
         language = tweet.get('lang', 'unknown')
         
-        return {
-            **tweet,
-            'ai_sentiment': sentiment,
-            'ai_emotion': emotion,
-            'ai_entities': entities,
-            'engagement_score': engagement_score,
-            'content_features': {
-                'has_media': has_media,
-                'has_urls': has_urls,
-                'has_hashtags': has_hashtags,
-                'has_mentions': has_mentions,
-                'length': len(text),
-                'language': language
-            }
+        tweet['ai_sentiment'] = sentiment
+        tweet['ai_emotion'] = emotion
+        tweet['ai_entities'] = entities
+        tweet['engagement_score'] = engagement_score
+        tweet['content_features'] = {
+            'has_media': has_media,
+            'has_urls': has_urls,
+            'has_hashtags': has_hashtags,
+            'has_mentions': has_mentions,
+            'length': len(text),
+            'language': language
         }
+        
+        return tweet
     
     def analyze_tweets_batch(self, tweets_list, label="tweets"):
         """Analyze a batch of tweets"""
@@ -1131,9 +1194,19 @@ class AdvancedInsightsAnalyzer:
         }
         
         # Extract tweet lists
-        own_tweets = data.get('user_tweets', {}).get('data', [])
-        mentions = data.get('mentions', {}).get('data', [])
-        search_results = data.get('search_results', {}).get('data', [])
+        own_tweets_raw = data.get('user_tweets', {}).get('data', [])
+        mentions_raw = data.get('mentions', {}).get('data', [])
+        search_results_raw = data.get('search_results', {}).get('data', [])
+
+        # Remove retweets so they aren't analyzed twice (original tweet + retweet)
+        own_tweets = self._filter_retweets(own_tweets_raw, "own tweets")
+        mentions = self._filter_retweets(mentions_raw, "mentions")
+        search_results = self._filter_retweets(search_results_raw, "search results")
+        
+        # Deduplicate across sources (same tweet might appear in mentions AND search_results)
+        own_tweets, mentions, search_results = self._deduplicate_tweets_across_sources(
+            own_tweets, mentions, search_results
+        )
         
         print(f"[DATA] Found {len(own_tweets)} own tweets, {len(mentions)} mentions, {len(search_results)} search results\n")
         
@@ -1152,10 +1225,17 @@ class AdvancedInsightsAnalyzer:
         if search_results:
             analyzed_search = self.analyze_tweets_batch(search_results, "search results")
         
-        # Store analyzed tweets
-        analysis_results['advanced_analysis']['analyzed_tweets'] = analyzed_tweets
-        analysis_results['advanced_analysis']['analyzed_mentions'] = analyzed_mentions
-        analysis_results['advanced_analysis']['analyzed_search'] = analyzed_search
+        # Store inline metadata (tweets already updated in-place inside original_data)
+        inline_counts = {
+            'own_tweets': len(analyzed_tweets),
+            'mentions': len(analyzed_mentions),
+            'search_results': len(analyzed_search)
+        }
+        analysis_results['advanced_analysis']['analyzed_tweets'] = []
+        analysis_results['advanced_analysis']['analyzed_mentions'] = []
+        analysis_results['advanced_analysis']['analyzed_search'] = []
+        analysis_results['advanced_analysis']['inline_enrichment'] = True
+        analysis_results['advanced_analysis']['inline_counts'] = inline_counts
         
         # 4. Advanced topic modeling
         all_tweets = analyzed_tweets + analyzed_mentions
