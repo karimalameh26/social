@@ -1,337 +1,320 @@
-# Mark Daou Political Intelligence Dashboard
+# 🇱🇧 Mark Daou - Political Intelligence Dashboard
 
-**Comprehensive sentiment analysis, campaign tracking, and public opinion monitoring for Lebanese politician Mark Daou using X (Twitter) API v2.**
+A comprehensive political intelligence system that tracks Mark Daou's political activity, analyzes sentiment, monitors campaigns, and provides actionable insights.
+
+---
+
+## ⚡ Quick Start
+
+```bash
+# 1. Collect data + auto-generate insights
+python comprehensive_fetcher.py
+
+# 2. Track campaign hashtag (optional)
+python hashtag_campaign_analyzer.py
+
+# 3. Launch dashboard
+streamlit run enhanced_dashboard.py
+```
+
+**API Usage:** 200-300 calls per run (0.06% of monthly quota)
+
+---
 
 ## 🎯 Features
 
-### Sentiment Analysis
-- ✅ Sentiment classification (positive/negative/neutral)
-- ✅ Public opinion tracking
-- ✅ Mention sentiment analysis
-- ✅ Campaign message sentiment
+### Core Analytics
+- ✅ Profile & campaign metrics
+- ✅ Sentiment analysis (positive/negative/neutral)
+- ✅ Public opinion tracking (-100 to +100 score)
+- ✅ Engagement metrics (likes, retweets, replies)
+- ✅ Hashtag & topic analysis
 
-### Campaign Tracking
-- ✅ Reach and influence metrics
-- ✅ Engagement analytics
-- ✅ Hashtag performance
-- ✅ Posting pattern analysis
-- ✅ Top performing content
+### Advanced Features
+- ✅ **Automatic insight extraction** - Generates actionable recommendations
+- ✅ **Campaign hashtag tracking** - Monitor campaign performance & health
+- ✅ **Follower geography** - Lebanon vs Diaspora distribution
+- ✅ **Follower demographics** - Age, influence, verified %
+- ✅ **Follower segmentation** - Activity & influence levels
+- ✅ **AI sentiment** (optional) - BERT + VADER + TextBlob
 
-### Public Opinion Monitoring
-- ✅ Public opinion score (-100 to +100)
-- ✅ Sentiment trends over time
-- ✅ Geographic distribution
-- ✅ Audience demographics
-- ✅ Follower analysis
+### Dashboard
+- 📊 **14 interactive pages**
+- 📈 Real-time visualizations
+- 💡 Prioritized recommendations
+- 🎯 Campaign health scoring
 
-### Advanced Analytics
-- ✅ Topic detection (with elevated access)
-- ✅ Engagement rate calculation
-- ✅ Influence scoring
-- ✅ Posting time optimization
-- ✅ Hashtag trending
+---
 
-## 📊 X API v2 Endpoints Used
+## 📊 System Overview
 
-This system uses multiple endpoints for comprehensive data collection:
+| Script | Purpose | API Calls |
+|--------|---------|-----------|
+| `comprehensive_fetcher.py` | Collect data + insights | 200 |
+| `hashtag_campaign_analyzer.py` | Track campaigns | 100 |
+| `analyze_data.py` | AI sentiment (optional) | 0 |
+| `enhanced_dashboard.py` | Visualize everything | 0 |
 
-### Core Endpoints (Free Tier)
-1. **GET /2/users/by/username/:username** - User lookup
-2. **GET /2/users/:id** - User profile with metrics
-3. **GET /2/users/:id/tweets** - User's tweets
-4. **GET /2/users/:id/mentions** - Mentions of the user
-5. **GET /2/tweets/search/recent** - Search tweets (7 days)
-6. **GET /2/users/:id/followers** - Follower information
-7. **GET /2/users/:id/following** - Following information
+**Total: 300 API calls = 0.06% of monthly quota**
 
-### Data Fields Retrieved
-- **public_metrics** - Likes, retweets, replies, quotes, impressions
-- **entities** - Hashtags, mentions, URLs
-- **created_at** - Timestamps for trend analysis
-- **context_annotations** - Topic detection (requires elevated access)
-- **user.fields** - Profile, verification, location
-- **media.fields** - Attachments, images, videos
+---
 
-## 🚀 Quick Start
+## 📁 Project Structure
 
-### Step 1: Get X API Credentials
+```
+end/
+├── comprehensive_fetcher.py          # Main data collector
+├── hashtag_campaign_analyzer.py      # Campaign tracker
+├── analyze_data.py                   # AI analytics (optional)
+├── enhanced_dashboard.py             # Dashboard viewer
+├── requirements.txt                  # Dependencies
+├── START_HERE.md                     # Setup guide
+├── GET_API_CREDENTIALS.md            # API setup
+├── NEW_FEATURES_INSIGHTS_CAMPAIGNS.md # Feature documentation
+├── QUICK_REFERENCE_UPDATED.md        # Quick reference
+└── README.md                         # This file
+```
 
-Follow the detailed guide in `GET_API_CREDENTIALS.md`:
+---
 
-1. Create Twitter Developer account at https://developer.twitter.com/
-2. Create a Project and App
-3. Generate Bearer Token
-4. Copy and save your token
+## 🚀 Setup
 
-**The FREE tier is sufficient for this project!**
-
-### Step 2: Install Dependencies
-
+### 1. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-Dependencies:
-- streamlit - Dashboard framework
-- pandas - Data manipulation
-- plotly - Interactive visualizations
-- requests - API calls
-- python-docx - Read endpoint docs
+### 2. Get API Credentials
+See `GET_API_CREDENTIALS.md` for detailed instructions.
 
-### Step 3: Collect Data
+**Quick version:**
+1. Go to https://developer.twitter.com/
+2. Create free developer account
+3. Create project and app
+4. Generate Bearer Token
+5. Save the token
 
+### 3. Run Data Collection
 ```bash
 python comprehensive_fetcher.py
 ```
 
-When prompted:
-1. Enter your X API Bearer Token
-2. Enter Mark Daou's X username (e.g., `markdaou_lb`)
+**Enter:**
+- Your Bearer Token
+- Username: `DaouMark`
 
-The script will:
-- ✅ Fetch user profile and metrics
-- ✅ Collect recent tweets (up to 100)
-- ✅ Gather mentions (up to 100)
-- ✅ Search for related tweets
-- ✅ Sample followers and following
-- ✅ Analyze sentiment
-- ✅ Extract hashtags and topics
-- ✅ Calculate engagement metrics
-- ✅ Analyze posting patterns
+**Collects:**
+- 50 recent tweets
+- 50 mentions
+- 100 followers with demographics
+- Auto-generates insights
 
-Data is saved to: `mark_daou_comprehensive_YYYYMMDD_HHMMSS.json`
-
-### Step 4: Launch Dashboard
-
+### 4. Launch Dashboard
 ```bash
 streamlit run enhanced_dashboard.py
 ```
 
-Dashboard opens at: **http://localhost:8501**
-
-## 📊 Dashboard Pages
-
-### 1. Campaign Overview
-- Total reach (followers)
-- Engagement rate
-- Influence score
-- Reach ratio
-- Key performance indicators
-
-### 2. Sentiment Analysis
-- Sentiment in mentions
-- Sentiment in search results
-- Sentiment in own tweets
-- Visual pie charts
-- Percentage breakdowns
-
-### 3. Public Opinion
-- Public opinion score gauge (-100 to +100)
-- Overall sentiment classification
-- Response breakdown
-- Trend indicators
-
-### 4. Engagement Metrics
-- Total and average engagement
-- Likes, retweets, replies, quotes
-- Top performing tweet
-- Engagement comparisons
-
-### 5. Hashtag Analysis
-- Top hashtags used
-- Hashtag frequency
-- Trending campaign tags
-- Mention hashtags
-
-### 6. Topic Analysis
-- Auto-detected topics (requires elevated API access)
-- Topic distribution
-- Trending topics in mentions
-
-### 7. Posting Patterns
-- Most active hours
-- Most active days
-- Posting optimization insights
-
-### 8. Audience Analysis
-- Follower demographics
-- Verified follower ratio
-- Geographic distribution
-- Following analysis
-
-## 📈 Metrics Explained
-
-### Engagement Rate
-```
-(Total Likes + Total Retweets) / Total Tweets
-```
-
-### Influence Score
-```
-(Followers × 0.7) + (Total Tweets × 0.3)
-```
-
-### Public Opinion Score
-```
-((Positive - Negative) / Total) × 100
-```
-Range: -100 (all negative) to +100 (all positive)
-
-### Reach Ratio
-```
-Followers / Following
-```
-Higher ratio indicates greater influence
-
-## 🔄 Data Collection Schedule
-
-### Recommended Frequency
-- **Daily**: For active campaigns
-- **Weekly**: For regular monitoring
-- **Real-time**: Use streaming endpoints (see docs)
-
-### Rate Limits (Free Tier)
-- User lookup: 300 requests / 15 min
-- Search recent: 450 requests / 15 min
-- User tweets: 1,500 requests / 15 min
-- Mentions: 450 requests / 15 min
-
-The script handles rate limits automatically with wait periods.
-
-## 🔐 Security Best Practices
-
-### Never Commit Credentials
-```bash
-# Add to .gitignore
-echo "*.env" >> .gitignore
-echo "*_token.txt" >> .gitignore
-echo "mark_daou_comprehensive_*.json" >> .gitignore
-```
-
-### Use Environment Variables
-```bash
-# Create .env file
-TWITTER_BEARER_TOKEN=your_token_here
-```
-
-Then in Python:
-```python
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-bearer_token = os.getenv('TWITTER_BEARER_TOKEN')
-```
-
-## 📁 File Structure
-
-```
-.
-├── comprehensive_fetcher.py    # Main data collection script
-├── enhanced_dashboard.py       # Sentiment & campaign dashboard
-├── extract_endpoints.py        # Read endpoint documentation
-├── GET_API_CREDENTIALS.md      # How to get X API access
-├── README.md                   # This file
-├── requirements.txt            # Python dependencies
-├── X EndPoints 1.docx          # API documentation
-└── X EndPoints 2.docx          # API documentation
-```
-
-## 🎓 Advanced Features
-
-### Sentiment Analysis Algorithm
-Uses keyword-based classification:
-- **Positive**: reform, progress, support, hope, success, etc.
-- **Negative**: corrupt, crisis, fail, disaster, problem, etc.
-- **Neutral**: discuss, announce, statement, update, etc.
-
-### For Better Sentiment Analysis
-Consider integrating:
-- **TextBlob** - Python sentiment analysis
-- **VADER** - Social media sentiment
-- **Transformers** - Deep learning models
-- **Arabic NLP** - For Arabic tweets
-
-### Streaming for Real-Time Data
-Upgrade script to use:
-- `GET /2/tweets/search/stream` - Filtered stream
-- `POST /2/tweets/search/stream/rules` - Set filters
-
-### Full Archive Search
-Requires Pro tier ($5,000/month):
-- `GET /2/tweets/search/all` - All tweets since 2006
-
-## 🛠️ Troubleshooting
-
-### "Could not authenticate you"
-- Check Bearer Token is correct
-- Ensure no extra spaces
-- Regenerate token if needed
-
-### "No data available" in dashboard
-- Run `comprehensive_fetcher.py` first
-- Check username is correct
-- Verify API credentials
-
-### Rate limit errors
-- Script waits automatically
-- Reduce max_results if needed
-- Space out data collection
-
-### Missing context annotations
-- Requires elevated API access
-- Apply for elevated (free but needs approval)
-- Or upgrade to Basic/Pro tier
-
-## 📚 Resources
-
-- **X API Documentation**: https://developer.twitter.com/en/docs/twitter-api
-- **Developer Portal**: https://developer.twitter.com/en/portal/dashboard
-- **Rate Limits**: https://developer.twitter.com/en/docs/twitter-api/rate-limits
-- **Community Forum**: https://twittercommunity.com/
-
-## 🔄 Future Enhancements
-
-- [ ] Arabic text sentiment analysis
-- [ ] Historical trend tracking
-- [ ] Automated reporting (PDF/email)
-- [ ] Real-time streaming dashboard
-- [ ] Competitor comparison
-- [ ] Network analysis visualization
-- [ ] Predictive analytics
-- [ ] Media content analysis
-- [ ] Scheduled data collection
-- [ ] Multi-language support
-
-## 📞 Support
-
-For issues:
-1. Check `GET_API_CREDENTIALS.md` for API setup
-2. Review error messages carefully
-3. Verify API rate limits
-4. Check X API status page
-
-## ⚖️ License & Ethics
-
-This tool is for:
-- ✅ Political research
-- ✅ Campaign monitoring
-- ✅ Public opinion analysis
-- ✅ Transparency and accountability
-
-Please use responsibly and respect:
-- X Terms of Service
-- Privacy regulations
-- Data protection laws
-- Ethical research practices
+Opens at: `http://localhost:8501`
 
 ---
 
-**Ready to start?**
+## 📊 Dashboard Pages
 
-1. Get credentials: See `GET_API_CREDENTIALS.md`
-2. Collect data: `python comprehensive_fetcher.py`
-3. View dashboard: `streamlit run enhanced_dashboard.py`
+1. **Campaign Overview** - Profile metrics & reach
+2. **Actionable Insights** - Auto-generated recommendations ⭐
+3. **Campaign Tracker** - Hashtag campaign analysis ⭐
+4. **Sentiment Analysis** - AI sentiment (BERT/VADER/TextBlob)
+5. **Public Opinion** - Opinion gauge (-100 to +100)
+6. **Engagement Metrics** - Likes, retweets, replies
+7. **Hashtag Analysis** - Top hashtags with sentiment
+8. **Topic Analysis** - LDA topic modeling
+9. **Posting Patterns** - Best times/days
+10. **Audience Analysis** - Engagement patterns
+11. **Follower Geography** - Lebanon vs Diaspora split
+12. **Follower Demographics** - Influential followers
+13. **Follower Segmentation** - Activity & influence levels
+14. **Raw Data** - Full JSON export
 
-🇱🇧 **Monitor Mark Daou's political activity with powerful analytics!**
+---
 
+## 💡 Use Cases
+
+### Daily Monitoring
+```bash
+python comprehensive_fetcher.py && streamlit run enhanced_dashboard.py
+```
+
+### Campaign Tracking
+```bash
+python hashtag_campaign_analyzer.py  # Enter campaign hashtag
+streamlit run enhanced_dashboard.py  # View [HASHTAG] page
+```
+
+### Weekly Analysis
+```bash
+# Run Monday & Friday
+python comprehensive_fetcher.py
+python hashtag_campaign_analyzer.py
+
+# Compare insights over time
+```
+
+---
+
+## 🎯 Key Features Explained
+
+### Automatic Insights
+- Sentiment analysis (own tweets + public perception)
+- Engagement performance metrics
+- Follower quality analysis
+- **Prioritized recommendations** (HIGH/MEDIUM/OPPORTUNITY/POSITIVE)
+
+### Campaign Tracking
+- Campaign health score (Excellent/Good/Moderate/Needs Improvement)
+- Performance metrics (engagement, reach, impressions)
+- Sentiment analysis per campaign
+- Top performing tweets
+- Actionable recommendations
+
+### Follower Analytics
+- **Geography:** Lebanon vs Diaspora distribution, top 20 locations
+- **Demographics:** Verified %, account age, influential followers (10k+)
+- **Segmentation:** Activity levels, influence tiers, political interest
+
+---
+
+## 📈 API Usage
+
+### Free Tier Limits
+- **500,000 calls/month** available
+- **200-300 calls/run** = 0.06% usage
+- Can run **1,600+ times/month**
+
+### Recommended Frequency
+- **Active campaigns:** 2-3x daily
+- **Regular monitoring:** Daily
+- **Maintenance:** Weekly
+
+---
+
+## 📚 Documentation
+
+- **`START_HERE.md`** - Quick start guide
+- **`GET_API_CREDENTIALS.md`** - API setup instructions
+- **`NEW_FEATURES_INSIGHTS_CAMPAIGNS.md`** - Complete feature guide
+- **`QUICK_REFERENCE_UPDATED.md`** - Commands & workflows
+
+---
+
+## 🔧 Requirements
+
+- Python 3.8+
+- X (Twitter) API Bearer Token (free tier)
+- Dependencies in `requirements.txt`
+
+---
+
+## 📊 Sample Output
+
+### Console (Insights)
+```
+[INSIGHTS SUMMARY]
+==============================================================
+
+[DATA] Analyzed:
+   Reach: 38,152 followers
+   Tweets: 50
+   Mentions: 50
+
+[SENTIMENT] Public Perception:
+   Dominant: POSITIVE
+   Sentiment Score: 12.5%
+
+[RECOMMENDATIONS] Actionable Insights:
+   1. [POSITIVE] Sentiment
+      Finding: Public sentiment is positive (12.5%)
+      Action: Maintain current messaging strategy
+```
+
+### Files Generated
+```
+mark_daou_comprehensive_20251120_153045.json  # Full data
+mark_daou_insights_20251120_153045.json       # Insights ⭐
+campaign_YallaRegister_20251120_154530.json   # Campaign data ⭐
+```
+
+---
+
+## 🎯 System Capabilities
+
+### Data Collection
+- ✅ User profile & verification status
+- ✅ Recent tweets (50)
+- ✅ Mentions (50)
+- ✅ Followers with location & demographics (100)
+- ✅ Campaign hashtag tweets (100)
+
+### Analysis
+- ✅ Sentiment analysis (basic + AI optional)
+- ✅ Engagement metrics
+- ✅ Geographic distribution
+- ✅ Follower segmentation
+- ✅ Topic modeling
+- ✅ Campaign performance
+
+### Insights
+- ✅ Auto-generated recommendations
+- ✅ Priority-based action items
+- ✅ Campaign health scoring
+- ✅ Trend identification
+- ✅ Opportunity detection
+
+---
+
+## 🆘 Support
+
+### Common Issues
+
+**No data in dashboard:**
+```bash
+# Run data collection first
+python comprehensive_fetcher.py
+```
+
+**API rate limit:**
+```bash
+# Wait 15 minutes for reset
+# Or reduce max_results in scripts
+```
+
+**Missing insights:**
+```bash
+# Check for insights JSON
+ls mark_daou_insights_*.json
+
+# Re-run if missing
+python comprehensive_fetcher.py
+```
+
+---
+
+## 📝 License
+
+This is a political intelligence tool for monitoring and analysis purposes.
+
+---
+
+## 🎊 Credits
+
+Built with:
+- X (Twitter) API v2
+- Streamlit (dashboard)
+- Plotly (visualizations)
+- BERT, VADER, TextBlob (sentiment analysis)
+- scikit-learn (topic modeling)
+
+---
+
+**Made for Mark Daou's political campaign** 🇱🇧
+
+**Quick Start:** `python comprehensive_fetcher.py && streamlit run enhanced_dashboard.py`
